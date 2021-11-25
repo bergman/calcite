@@ -39,6 +39,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
+import org.apache.calcite.rex.RexCorrelVariable;
 import org.apache.calcite.runtime.FlatLists;
 import org.apache.calcite.runtime.Hook;
 import org.apache.calcite.schema.SchemaPlus;
@@ -5323,6 +5324,32 @@ class RelToSqlConverterTest {
     sql(sql).ok(expected);
   }
 
+  /**
+   * Some SQL dialects throw UnsupportedOperationException via
+   * @see SqlImplementor.Context#getAliasContext(RexCorrelVariable)
+   */
+  @Test void testUnnestCorrelateBrokenInSomeDialects() {
+    final String sql = "select did + 1\n"
+        + "from \"department\", unnest(array[\"department_id\", 1]) as t(did)";
+
+    final String expected = "SELECT \"$cor0\".\"DID\" + 1\n"
+        + "FROM (SELECT \"department_id\", \"department_description\", ARRAY[\"department_id\", 1] AS \"$f2\"\n"
+        + "FROM \"foodmart\".\"department\") AS \"$cor0\",\n"
+        + "LATERAL (SELECT \"col_0\" AS \"DID\"\n"
+        + "FROM UNNEST (SELECT \"$cor0\".\"$f2\"\n"
+        + "FROM (VALUES (0)) AS \"t\" (\"ZERO\")) AS \"t1\" (\"col_0\")) AS \"t2\"";
+    sql(sql).ok(expected);
+
+    for (DatabaseProduct databaseProduct : DatabaseProduct.values()) {
+      final SqlDialect sqlDialect = databaseProduct.getDialect();
+      try {
+        sql(sql).dialect(sqlDialect).exec();
+      } catch (UnsupportedOperationException e) {
+        System.out.println("sqlDialect throws: " + sqlDialect.getClass().getSimpleName());
+        e.printStackTrace();
+      }
+    }
+  }
 
   @Test void testWithinGroup1() {
     final String query = "select \"product_class_id\", collect(\"net_weight\") "
