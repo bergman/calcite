@@ -35,6 +35,11 @@ public class CalciteSqlDialect extends SqlDialect {
    */
   public static final SqlDialect DEFAULT = new CalciteSqlDialect(DEFAULT_CONTEXT);
 
+  @Override
+  public boolean hasImplicitTableAlias() {
+    return false;
+  }
+
   /** Creates a CalciteSqlDialect. */
   public CalciteSqlDialect(Context context) {
     super(context);
