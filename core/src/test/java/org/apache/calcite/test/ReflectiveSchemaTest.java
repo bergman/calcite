@@ -16,6 +16,28 @@
  */
 package org.apache.calcite.test;
 
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import com.google.common.collect.ImmutableList;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.List;
+import java.util.Properties;
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.config.Lex;
@@ -39,33 +61,8 @@ import org.apache.calcite.test.schemata.hr.HrSchema;
 import org.apache.calcite.util.Smalls;
 import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
-
-import com.google.common.collect.ImmutableList;
-
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.util.Arrays;
-import java.util.BitSet;
-import java.util.List;
-import java.util.Properties;
-
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Unit tests for {@link ReflectiveSchema}.
@@ -317,6 +314,16 @@ public class ReflectiveSchemaTest {
         .returnsUnordered(
             "value=null",
             "value=true");
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2404">[CALCITE-2404]
+   * Accessing structured-types is not implemented by the runtime</a>. */
+  @Test void testSelectWithFieldAccessOnFirstLevelRecordTypeWithoutAlias() {
+    CalciteAssert.that()
+        .with(CalciteAssert.SchemaSpec.BOOKSTORE)
+        .query("select \"birthPlace\".\"city\" as city from \"bookstore\".\"authors\"\n")
+        .returnsUnordered("CITY=Heraklion", "CITY=Besançon", "CITY=Ionia");
   }
 
   /** Test case for

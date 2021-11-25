@@ -16,6 +16,20 @@
  */
 package org.apache.calcite.tools;
 
+import static org.apache.calcite.test.RelMetadataTest.sortsAs;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.calcite.adapter.enumerable.EnumerableConvention;
 import org.apache.calcite.adapter.enumerable.EnumerableProject;
 import org.apache.calcite.adapter.enumerable.EnumerableRules;
@@ -47,6 +61,7 @@ import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.logical.LogicalFilter;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
+import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.ProjectMergeRule;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
@@ -66,9 +81,13 @@ import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlWriterConfig;
+import org.apache.calcite.sql.dialect.BigQuerySqlDialect;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.test.SqlTests;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
@@ -83,30 +102,12 @@ import org.apache.calcite.test.schemata.tpch.TpchSchema;
 import org.apache.calcite.util.Optionality;
 import org.apache.calcite.util.Smalls;
 import org.apache.calcite.util.Util;
-
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-
 import org.hamcrest.Matcher;
 import org.immutables.value.Value;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.apache.calcite.test.RelMetadataTest.sortsAs;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Unit tests for {@link Planner}.
@@ -120,7 +121,47 @@ class PlannerTest {
 
     SqlNode validate = planner.validate(parse);
     RelNode rel = planner.rel(validate).project();
+    final SqlDialect sqlDialect = BigQuerySqlDialect.DEFAULT;
+    final RelToSqlConverter relToSqlConverter = new RelToSqlConverter(sqlDialect);
+    final SqlWriterConfig sqlWriterConfig =
+        SqlPrettyWriter.config().withDialect(sqlDialect).withQuoteAllIdentifiers(true);
+    SqlPrettyWriter sqlWriter = new SqlPrettyWriter(sqlWriterConfig);
+    SqlSelect sqlSelect = relToSqlConverter.visitRoot(rel).asSelect();
+    final String sqlString = sqlWriter.format(sqlSelect);
+    System.out.println("sqlString = " + sqlString);
     assertThat(toString(rel), equalTo(expectedRelExpr));
+  }
+
+  @Test void testParseAndConvert3() throws Exception {
+    checkParseAndConvert(
+        // "select \"deptno\", count(\"es\") from \"emps\", unnest(\"employees\") as \"es\" group by \"deptno\"",
+        "select \"deptno\", \"employees\" from \"emps\" group by \"deptno\"",
+
+        // "SELECT `deptno`, COUNT(`es`)\n"
+        // + "FROM `emps`,\n"
+        // + "UNNEST(`employees`) AS `es`\n"
+        // + "GROUP BY `deptno`",
+        "SELECT `deptno`, `employees`\n"
+        + "FROM `emps`\n"
+        + "GROUP BY `deptno`",
+
+        "LogicalProject(empid=[$0], deptno=[$1], name=[$2], salary=[$3], commission=[$4])\n"
+        + "  LogicalFilter(condition=[LIKE($2, '%e%')])\n"
+        + "    LogicalTableScan(table=[[hr, emps]])\n");
+  }
+
+  @Test void testParseAndConvert2() throws Exception {
+    checkParseAndConvert(
+        "select count(*), \"deptno\" from \"emps\", unnest(array[\"deptno\", null]) as \"t1.deptno\" group by \"deptno\"",
+
+        "SELECT COUNT(*), `deptno`\n"
+        + "FROM `emps`,\n"
+        + "UNNEST(ARRAY[`deptno`, NULL]) AS `t1.deptno`\n"
+        + "GROUP BY `deptno`",
+
+        "LogicalProject(empid=[$0], deptno=[$1], name=[$2], salary=[$3], commission=[$4])\n"
+        + "  LogicalFilter(condition=[LIKE($2, '%e%')])\n"
+        + "    LogicalTableScan(table=[[hr, emps]])\n");
   }
 
   @Test void testParseAndConvert() throws Exception {
