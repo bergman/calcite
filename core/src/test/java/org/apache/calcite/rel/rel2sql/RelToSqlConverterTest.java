@@ -5340,14 +5340,15 @@ class RelToSqlConverterTest {
         + "FROM (VALUES (0)) AS \"t\" (\"ZERO\")) AS \"t1\" (\"col_0\")) AS \"t2\"";
     sql(sql).ok(expected);
 
-    dialects().forEach((sqlDialect, databaseProduct) -> {
+    for (DatabaseProduct databaseProduct : DatabaseProduct.values()) {
+      final SqlDialect sqlDialect = databaseProduct.getDialect();
       try {
         sql(sql).dialect(sqlDialect).exec();
       } catch (UnsupportedOperationException e) {
         System.out.println("sqlDialect throws: " + sqlDialect.getClass().getSimpleName());
         e.printStackTrace();
       }
-    });
+    }
   }
 
   @Test void testWithinGroup1() {
